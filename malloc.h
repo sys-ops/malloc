@@ -1,22 +1,39 @@
 /**********************************************
-
-  Author: Daniel Andrzejewski
-
-  malloc.h
-
-  description:
-    replacement for malloc() and free()
-
-    void *malloc(unsigned size);
-    void free(void *ptr);
-
+*
+*  Author: Daniel Andrzejewski
+*
+*  description:
+*    replacement for malloc() and free()
+*
+*    void *malloc(unsigned size);
+*    void free(void *ptr);
+*
+*    The  malloc()  and  free()  functions  provide   a   simple,
+*    general-purpose  memory  allocation  package.  The  malloc()
+*    function returns a pointer to a block of at least size bytes
+*    suitably  aligned  for  any use.  If  the  space assigned by
+*    malloc() is overrun, the results are undefined.
+*
+*    The argument to free() is a pointer to  a  block  previously
+*    allocated  by malloc(). After free() is executed, this space
+*    space  is  made  available  for further  allocation  by  the
+*    application,  though  not returned to the system.  Memory is
+*    returned   to  the  system  only  upon  termination  of  the
+*    application. If ptr is a null pointer, no action  occurs. If
+*    a  random  number  is  passed  to  free(), the  results  are
+*    undefined.
+*
 ***********************************************/
 
 #include <stdio.h>  //printf()
 #include <stdlib.h> //atoi()
 #include <unistd.h> //sbrk()
 
-struct flh {        //struct free_list_header = type
+void*   malloc  (unsigned bytes);
+void    free    (void *address);
+
+
+struct flh {
     long size;
     struct flh *prev;
     struct flh *next;
@@ -58,12 +75,12 @@ void* malloc(unsigned bytes) {
             current_ptr = current_ptr->next;
             continue;
         }
-        if ( (total_bytes > -current_ptr->size) && (current_ptr->next == NULL) ) { //( (total_bytes > (-current_ptr->size - 3*sizeof(double) ))
+        if ( (total_bytes > -current_ptr->size) && (current_ptr->next == NULL) ) {
 
             sbrk_ret = sbrk(8192);
             if (sbrk_ret == (char *)-1) {
                 printf("\nmalloc error: can't allocate more space\n");
-                return NULL; //
+                return NULL;
             }
             current_ptr->size = current_ptr->size - 8192;
         }
@@ -73,8 +90,8 @@ void* malloc(unsigned bytes) {
             if (total_bytes == (-current_ptr->size - 1*sizeof(double))) total_bytes = -current_ptr->size; // we don't want to leave empty spaces
             if (total_bytes == (-current_ptr->size - 2*sizeof(double))) total_bytes = -current_ptr->size; // we may leave at least 24 bytes
 
-                    //it fits exactly or greater then free chunk - 24 bytes... !!!
-                    //I need to unlink free chunk from free list
+                    // it fits exactly or greater then free chunk - 24 bytes... !!!
+                    // I need to unlink the free chunk from free list
 
             mem_left = -current_ptr->size - total_bytes;
             current_ptr->size = total_bytes;
@@ -101,7 +118,7 @@ void* malloc(unsigned bytes) {
 
                 addr_ptr = current_ptr;
                 addr_ptr = addr_ptr + total_bytes;
-                tmp_ptr = addr_ptr;// + total_bytes;
+                tmp_ptr = addr_ptr;
 
                 tmp_ptr->size = -mem_left; // create new free chunk of size mem_left
                 tmp_ptr->prev = current_ptr->prev;
@@ -111,7 +128,7 @@ void* malloc(unsigned bytes) {
 
                 if (current_ptr->next != NULL) { // NULL means that this is the last free chunk
 
-                    addr_ptr = current_ptr; // go to a tail of this new free chunk
+                    addr_ptr = current_ptr;     // go to a tail of this new free chunk
                     addr_ptr = addr_ptr + total_bytes - 8;
                     tmp_ptr = addr_ptr;
 
@@ -132,7 +149,7 @@ void* malloc(unsigned bytes) {
 
                 } else free_list_begin = current_ptr; // if it is the first free chunk then free_list_begin must point at it
 
-            } else { //it fits exactly,
+            } else { //it fits exactly
 
                 if (current_ptr->next == NULL) { // NULL means that this is the last free chunk
 
@@ -145,7 +162,7 @@ void* malloc(unsigned bytes) {
                     sbrk_ret = sbrk(8192);
                     if (sbrk_ret == (char *)-1) {
                         printf("\nmalloc error: can't allocate more space\n");
-                        return NULL; //
+                        return NULL;
                     }
 
                     addr_ptr = current_ptr;             // go to that new free chunk
@@ -181,35 +198,31 @@ void* malloc(unsigned bytes) {
 
 
 void free(void *address) {
+
     free_list_header *current_ptr, *tmp_ptr;
     void *addr_ptr, *addr_ptr2, *addr_ptr3;
     long size;
-
-
-    int *heap_begining, j;
-    heap_begining = &(end);
-
 
     if (free_list_begin == NULL) {  // if nothing malloced yet, free will return NULL
         printf("\nmalloc error\n");
         return NULL;
     }
 
-    addr_ptr = address - 8; // it should point to positive number >=24
+    addr_ptr = address - 8;         // it should point to positive number >= 24
     tmp_ptr = addr_ptr;
 
-        // first check if that address points to anything,
-        // size must be 24 or greater, here size has negative value
+        // at first, check if the address points to anything,
+        // size must be 24 or greater, here size has a negative value
     addr_ptr = &(end);
 
     if ((tmp_ptr < addr_ptr ) || (tmp_ptr == NULL) || ((size = tmp_ptr->size) < 24)) {
         printf("\nmalloc error\n");
-        return NULL; //
+        return NULL;
     }
 
-//*******************************************************
-//* change a value of size and values in tail to negative
-//*
+    //*******************************************************
+    //* change the value of size and values in tail to negative
+
     tmp_ptr->size = -size;
 
     addr_ptr = address + size - 16; // it points to in_use in tail
@@ -218,15 +231,16 @@ void free(void *address) {
 
     addr_ptr = address + size + 4 - 16;
     tmp_ptr = addr_ptr;
-    tmp_ptr->size = -size;  // it points to size in tail
-//*
-//********************************************************
+    tmp_ptr->size = -size;          // it points to size in tail
 
-    tmp_ptr = free_list_begin;  // go to first free chunk
-    addr_ptr = address - 8;     // it points to current chunk to free
+    //*
+    //********************************************************
+
+    tmp_ptr = free_list_begin;      // go to first free chunk
+    addr_ptr = address - 8;         // it points to current chunk to free
     current_ptr = addr_ptr;
 
-    if (current_ptr < tmp_ptr) { // if current chunk to free is before free_list_begin
+    if (current_ptr < tmp_ptr) {    // if current chunk to free is before free_list_begin
         current_ptr->prev = NULL;
         current_ptr->next = tmp_ptr;
         tmp_ptr->prev = current_ptr;
@@ -240,12 +254,12 @@ void free(void *address) {
 
         } while (current_ptr > tmp_ptr);
 
-        if (tmp_ptr->next == NULL) { // if next free chunk is the last one
+        if (tmp_ptr->next == NULL) {    // if next free chunk is the last one
 
             addr_ptr = tmp_ptr->prev;   // I need to remember this value
-            //addr_ptr2 = tmp_ptr->prev;    // it points to previous free chunk
+                                        // it points to previous free chunk
 
-            current_ptr->next = tmp_ptr; // tmp_ptr points to next free chunk
+            current_ptr->next = tmp_ptr;// tmp_ptr points to next free chunk
             tmp_ptr->prev = current_ptr;
 
             tmp_ptr = addr_ptr;         // tmp_ptr points to previous free chunk
@@ -253,7 +267,7 @@ void free(void *address) {
 
             tmp_ptr->next = current_ptr;
 
-        } else {                    // if next free chunk is not the last one
+        } else {                        // if next free chunk is not the last one
 
             addr_ptr2 = tmp_ptr->prev;
             addr_ptr3 = tmp_ptr->next;
@@ -276,7 +290,7 @@ void free(void *address) {
     size = -current_ptr->size;
     addr_ptr = address + size - 8;
 
-    tmp_ptr = addr_ptr; // it points to next chunk
+    tmp_ptr = addr_ptr;         // it points to next chunk
     size = tmp_ptr->size;
 
     if ((size < 0) && (tmp_ptr->next == NULL) && (tmp_ptr->prev == NULL)) {
@@ -288,7 +302,7 @@ void free(void *address) {
 
         free_list_begin = current_ptr;
 
-        return; // here we are done with coalescing two chunks that were next to each other
+        return;     // here we are done with coalescing two chunks that were next to each other
     }
 
     if (size < 0) { // negative value means next chunk is free
@@ -302,8 +316,8 @@ void free(void *address) {
         }
         else {
 
-            addr_ptr2 = tmp_ptr;    // I need to store this address, it points to free chunk,
-                                    // that is right behind the current chunk
+            addr_ptr2 = tmp_ptr;        // I need to store this address, it points to free chunk,
+                                        // that is right behind the current chunk
 
             addr_ptr = tmp_ptr->next;   // change data in next free chunk (following free chunk)
             tmp_ptr = addr_ptr;         // pointer to previous chunk is being updated here
@@ -315,7 +329,7 @@ void free(void *address) {
             tmp_ptr = addr_ptr2;
         }
 
-        if (tmp_ptr->next != NULL) { // write info to the tail of this free chunk
+        if (tmp_ptr->next != NULL) {        // write info to the tail of this free chunk
             addr_ptr = address + size - 16; // it points to in_use in tail
             tmp_ptr = addr_ptr;
             tmp_ptr->size = -1;
@@ -327,26 +341,26 @@ void free(void *address) {
 
     }
 
-        // now go to previous chunk
+        // now go to a previous chunk
 
-    if (current_ptr->prev != NULL) { // if current chunk is not the first one
+    if (current_ptr->prev != NULL) {// if current chunk is not the first one
 
-        addr_ptr = address - 16;            //it points to tail of prevoius chunk
+        addr_ptr = address - 16;    //it points to tail of prevoius chunk
         tmp_ptr = addr_ptr;
 
 
-        if (tmp_ptr->size == -1) { // negative one means previous chunk is free
+        if (tmp_ptr->size == -1) {  // negative one means previous chunk is free
 
             addr_ptr = addr_ptr + 4;//address - 8 - 4;
             tmp_ptr = addr_ptr;
-            size = tmp_ptr->size; // size of previous chunk
+            size = tmp_ptr->size;   // size of previous chunk
 
             if (size>=0) {
                 printf("\nmalloc error\n");
-                return NULL; //double check, it should be nagtive number
+                return NULL;        //double check, it should be nagtive number
             }
 
-            addr_ptr = address + size - 8; // it points to a header of previous chunk
+            addr_ptr = address + size - 8;  // it points to a header of previous chunk
             tmp_ptr = addr_ptr;
 
             tmp_ptr->size = current_ptr->size + tmp_ptr->size;
@@ -365,13 +379,13 @@ void free(void *address) {
                                                 // current chunk
                 tmp_ptr->prev = current_ptr;
 
-                addr_ptr = current_ptr;             // write info to the tail of this free chunk
+                addr_ptr = current_ptr;         // write info to tail of this free chunk
                 size = -current_ptr->size;
                 addr_ptr = addr_ptr + size - 8; // it points to in_use in tail of this chunk
                 tmp_ptr = addr_ptr;
                 tmp_ptr->size = -1;
 
-                addr_ptr = addr_ptr + 4;//+ size - 4; // it points to in_use in tail of this chunk
+                addr_ptr = addr_ptr + 4;        // it points to in_use in tail of this chunk
                 tmp_ptr = addr_ptr;
                 tmp_ptr->size = -size;
             }
